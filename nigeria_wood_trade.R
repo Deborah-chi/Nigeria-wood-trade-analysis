@@ -127,7 +127,7 @@ nigeria_wood_trade_arranged <- nigeria_wood_trade_clean |>
 
 # Conversion of current values from 1000 USD to million USD ---------------
 
-trade_millions <- nigeria_wood_trade_arranged |> 
+trade_millions <- nigeria_wood_trade_clean |> 
   mutate(
     value_million = value / 1000)
 
@@ -215,7 +215,7 @@ aggregate_items <- c(
 
 length(aggregate_items)
 
-## Top 5 export items with aggregates excluded ----------------------------
+## Top 5 export products with aggregates excluded ----------------------------
 
 top_export_value <- trade_millions |>
   filter(
@@ -232,7 +232,7 @@ top_export_value <- trade_millions |>
 
 top_export_value
 
-# Top 5 export products ---------------------------------------------------
+## Top 5 import products with aggregates excluded -----------------------------
 
 top_import_value <- trade_millions |>
   filter(
@@ -248,3 +248,174 @@ top_import_value <- trade_millions |>
   arrange(desc(total_import_million))
 
 top_import_value
+
+# Number & proportion of observation marked estimated or official ---------
+
+flag_summary <- nigeria_wood_trade_clean |>
+  count(flag, flag_description, name = "n_observations") |>
+  mutate(
+    proportion = round(n_observations / sum(n_observations), 3),
+    percent    = round(proportion * 100, 3)
+  ) |>
+  arrange(desc(n_observations))
+
+flag_summary
+
+# Total and average value in million by trade direction and year ---------
+
+annual_trade_millions <- trade_millions |>
+  filter(
+    element %in% c("Import value", "Export value"),
+    unit == "1000 USD"
+  ) |>
+  group_by(year, element) |>
+  summarise(
+    total_value_million   = sum(value_million, na.rm = TRUE),
+    average_value_million = mean(value_million, na.rm = TRUE),
+    number_of_observations = n(),
+    .groups = "drop"
+  ) |>
+  arrange(year, element)
+
+annual_trade_millions
+
+# Chart 1 -----------------------------------------------------------------
+
+total_chart <- annual_trade_millions |>
+  filter(element %in% c("Import value", "Export value")) |>
+  ggplot(mapping = aes(x = year,
+                       y = total_value_million,
+                       colour = element)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  scale_colour_manual(values = c("Import value" = "darkorange", "Export value" = "steelblue")) +
+  labs(
+    title = "Total Wood & Paper Trade Value by Direction (2000–2025)",
+    subtitle = "Total value summed across all products per year",
+    x = "Year",
+    y = "Total value (million USD)",
+    colour = "Trade Direction" 
+  ) +
+  theme_bw()
+
+total_chart
+
+# Chart 2 -----------------------------------------------------------------
+
+average_chart <- annual_trade_millions |>
+  filter(element %in% c("Import value", "Export value")) |>
+  ggplot(mapping = aes(x = year,
+                       y = average_value_million,
+                       colour = element)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  scale_colour_manual(values = c("Import value" = "darkgreen", "Export value" = "darkred")) +
+  labs(
+    title = "Average Wood & Paper Trade Value by Direction (2000–2025)",
+    subtitle = "Mean value per product-year record",
+    x = "Year",
+    y = "Average value (million USD)",
+    colour = "Trade Direction"
+  ) +
+  theme_bw()
+
+average_chart
+
+# Faceted data -----------------------------------------------------------
+
+facet_data <- annual_trade_millions |>
+  filter(element %in% c("Import value", "Export value")) |>
+  pivot_longer(
+    cols = c(total_value_million, average_value_million),
+    names_to = "measure",
+    values_to = "value_million"
+  ) |>
+  mutate(
+    measure = if_else(
+      measure == "total_value_million", 
+      "Total value", 
+      "Average value"
+    )
+  )
+
+facet_data
+
+## Chart 3 - facet chart --------------------------------------------------
+
+facet_chart <- ggplot(
+  data = facet_data, 
+  mapping = aes(
+    x = year, 
+    y = value_million, 
+    colour = element
+  )
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  facet_wrap(~ measure, scales = "free_y") +  
+  scale_colour_manual(values = c("Import value" = "darkorange", "Export value" = "steelblue")) +
+  labs(
+    title = "Total and Average Wood & Paper Trade Value by Direction (2000–2025)",
+    subtitle = "Comparing total and average trade values (in million USD) by year and direction",
+    x = "Year",
+    y = "Value (million USD)",
+    colour = "Trade Direction"
+  ) +
+  theme_light()
+
+facet_chart
+
+# Change in the number of products over time ------------------------------
+
+product_counts <- nigeria_wood_trade_clean |>
+  filter(element %in% c("Import value", "Export value")) |>
+  group_by(year, element) |>       
+  summarise(
+    unique_products = n_distinct(item),
+    .groups = "drop"
+  )
+
+product_counts
+
+# Chart 4 - product over time ---------------------------------------------
+
+product_counts_chart <- ggplot(
+  data = product_counts,
+  mapping = aes(x = year, y = unique_products, colour = element)
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  scale_colour_manual(values = c("Import value" = "darkred", "Export value" = "navyblue")) +
+  labs(
+    title = "Number of Unique Products Recorded by Year and Direction (2000–2025)",
+    subtitle = "Tracking the expansion of product categories in FAOSTAT",
+    x = "Year",
+    y = "Number of Unique Products",
+    colour = "Trade Direction"
+  ) +
+  theme_bw()
+
+product_counts_chart
+
+# Chart 5 - top 5 export product by total trade value ---------------------
+
+top_export_product <- top_export_value |>
+  mutate(item = fct_reorder(item, total_export_million)) |>
+  ggplot(mapping = aes(x = total_export_million, y = item)) +
+  geom_col(fill = "tomato") +
+  geom_text(
+    mapping = aes(label = round(total_export_million, 1)),
+    hjust = -0.2,
+    size = 4,
+    colour = "black"
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Top 5 Export Products by Total Trade Value (2000–2025)",
+    subtitle = "Leaf-level products only (aggregates excluded)",
+    x = "Total Export Value (Million USD)",
+    y = NULL
+  ) +
+  theme_bw()
+
+top_export_product
