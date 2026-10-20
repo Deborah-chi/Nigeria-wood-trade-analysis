@@ -59,7 +59,7 @@ nigeria_wood_trade_clean <- nigeria_wood_trade_new |>
     -year_code,
     -note
   ) |> 
-  filter(between(year, 2000, 2005))  # To allow the dataset from 2000 - 2005
+  filter(between(year, 2000, 2025))  # To allow the dataset from 2000 - 2025
 
 nigeria_wood_trade_clean
 
