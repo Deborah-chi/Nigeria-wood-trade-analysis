@@ -13,6 +13,7 @@ library(dplyr)
 
 library(car)
 
+
 # Import dataset ----------------------------------------------------------
 
 nigeria_wood_trade_raw <- read_csv("https://raw.githubusercontent.com/EU-Study-Assist/data-for-r4r/refs/heads/main/flatfiles/nigeria_wood_exp_data_fao_2000_2025.csv") |> 
@@ -116,6 +117,10 @@ nigeria_wood_trade_clean <- nigeria_wood_trade_clean |>
     year = as.integer(year),
     value = as.double(value)
   )
+
+## Verify no NAs were created during conversion ---------------------------
+
+sum(is.na(nigeria_wood_trade_clean$year))
 
 # Arranging column based on year, flag_desc, item, element & value --------
 
@@ -353,7 +358,7 @@ facet_chart <- ggplot(
   geom_line(linewidth = 1.2) +
   geom_point(size = 1.5) +
   facet_wrap(~ measure, scales = "free_y") +  
-  scale_colour_manual(values = c("Import value" = "darkorange", "Export value" = "steelblue")) +
+  scale_colour_manual(values = c("Import value" = "darkgreen", "Export value" = "red")) +
   labs(
     title = "Total and Average Wood & Paper Trade Value by Direction (2000–2025)",
     subtitle = "Comparing total and average trade values (in million USD) by year and direction",

@@ -1,0 +1,690 @@
+---
+title: "Nigeria's Wood Trade Report"
+author: "Deborah Elesie"
+format: pdf
+number-sections: true
+date: 2026-10-20
+bibliography: references.bib
+csl: apa.csl
+---
+
+## Introduction
+
+The Food and Agriculture Organization (FAO) tracks forestry production and trade data globally, providing vital statistics for understanding economic and environmental trends. For Nigeria, the wood and paper-product sector plays a significant role in the national economy, yet understanding its trade dynamics requires careful data management and exploration.
+
+This report presents a comprehensive, reproducible analysis of Nigeria's wood and paper-product trade data from 2000 to 2025 [@fao2025]. The objective is to build a clean, documented dataset and conduct an exploratory data analysis (EDA) to uncover useful patterns that can inform policy decisions.
+
+**The report is structured into two main sections:**
+
+**I. Data Management & Wrangling:** We begin by importing the raw FAOSTAT data, cleaning the structure, standardizing variable names, and filtering out non-relevant metrics to ensure mathematical validity. We then feature engineer the data to convert raw units into standardized million USD values and isolate leaf-level products from hierarchical aggregates to prevent double-counting.
+
+**II. Exploratory Data Analysis (EDA):** Using the cleaned data, we visualize and compare imports and exports over time. We investigate long-term trends in total versus average trade values, track the expansion of product diversity, and identify the top export products.
+
+By providing a clean dataset alongside clear visualizations, this report aims to provide the policy team with an evidence-based understanding of Nigeria's trade footprint in the forestry sector.
+
+## Part 1: Data Management
+
+**1. Load Packages**
+
+To ensure the analysis is reproducible, I used a package-management approach by loading all required libraries at the beginning. `tidyverse` handles the data wrangling and visualization, `janitor` cleans the column names, and `skimr` is used for data inspection.
+
+```{r}
+#| label: load-packages
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(janitor)
+library(readr)
+library(skimr)
+library(dplyr)
+library(car)
+```
+
+**2. Import Data and Clean Column Names**
+
+The raw CSV file that contains the data were imported directly from the GitHub repository. The function `janitor::clean_names()` was used to convert all column names into a standard snake_case convention, which makes them easier to reference in R.
+
+```{r}
+#| label: import-data
+
+nigeria_wood_trade_raw <- read_csv("https://raw.githubusercontent.com/EU-Study-Assist/data-for-r4r/refs/heads/main/flatfiles/nigeria_wood_exp_data_fao_2000_2025.csv") |> 
+  janitor::clean_names()
+
+head(nigeria_wood_trade_raw)
+
+nigeria_wood_trade_new <- nigeria_wood_trade_raw |>
+  clean_names()
+
+nigeria_wood_trade_new
+```
+**Note:** The snake_case conversion was saved using the name `nigeria_wood_trade_new`
+
+**3. Inspect the Imported Object**
+Using `skim()` and `str()`, Dataset were inspected to know the structure of the data. The function `head()`, `tail()` and `car::some` were used to preview the dataset to understand it more
+
+```{r}
+#| label: inspect-data
+
+# Structure and summary
+str(nigeria_wood_trade_raw)
+skim_without_charts(nigeria_wood_trade_raw)
+
+# Preview the dataset (top, bottom, and a random sample)
+head(nigeria_wood_trade_raw)
+tail(nigeria_wood_trade_raw)
+
+# Random sample of rows to see the variety of data
+set.seed(3423)
+car::some(nigeria_wood_trade_raw)
+```
+
+**Observation:** The dataset contains `r nrow(nigeria_wood_trade_raw)` rows and `r ncol(nigeria_wood_trade_raw)` columns. Some columns like domain, area, and element_code have no variance (they are constant across all rows). The *year* column was initially read as a character type instead of numeric, which will need to be fixed later. Using `car::some()` makes it clear that the dataset contains a mix of financial values (in *1000 USD*) and physical volumes (in t or m3), which means it must be filter by unit for further analysis.
+
+**4. Remove Unneeded Columns and Duplicates**
+
+Columns were removed that provided no analytical value for this specific project, such as *codes*, *labels*, and *metadata* (e.g., *domain_code*, *area_code_m49*, *item_code*). Duplicate rows were checked using a combination of *element*, *item*, and *year*. (*Note:* Dataset were filtered strictly between 2000 and 2025 to match the project scope).
+
+```{r}
+#| label: Clean-data-set
+
+nigeria_wood_trade_clean <- nigeria_wood_trade_new |> 
+  select(
+    -domain_code,
+    -domain,
+    -area_code_m49,
+    -area,
+    -element_code,
+    -item_code,
+    -year_code,
+    -note
+  ) |> 
+  filter(between(year, 2000, 2025))
+
+nigeria_wood_trade_clean
+
+# Check for duplicates
+n_dupes <- sum(duplicated(nigeria_wood_trade_clean[, c("element", "item", "year")]))
+
+n_dupes     
+```
+
+**Explanation:** `r n_dupes` duplicated rows were found. Therefore, all rows in the dataset are unique and valid, meaning we do not need to remove any data at this stage.
+
+**5. Export and Re-import the Cleaned Dataset**
+
+Created a *processed_data* folder and exported the cleaned dataset as a CSV file. To demonstrate that the file is readable, it was imported back into R in a separate code block.
+
+```{r}
+#| label: export-data
+
+# Create folder and export
+dir.create("processed_data", showWarnings = FALSE)
+
+write_csv(nigeria_wood_trade_clean, "processed_data/nigeria_wood_trade_clean.csv")
+
+# Re-import to demonstrate readability
+reimported_data <- read_csv("processed_data/nigeria_wood_trade_clean.csv")
+head(reimported_data)
+```
+
+## Part 2: Data Wrangling
+
+**1. Reshape the Values of Element**
+
+The assignment asks to reshape the values of element into new columns. However, for this specific analysis, reshaping the data is unnecessary because it have no impact on the analysis.  Reshaping the data is not necessary because we need to keep the **unit** column separate to avoid mixing USD, tons (t), and cubic meters (m3). Furthermore, keeping the data in its "long" format makes it much easier to use `group_by()` for summary statistics (like calculating total and average values) across different trade directions. 
+However, the crucial operation that must be performed before reshaping is filtering by unit (unit == "1000 USD"). This is highlighted below;
+
+```{r}
+#| label: Reshape-element-values
+
+# Applying Filter first
+element_col <- nigeria_wood_trade_clean |>
+  filter(
+    element %in% c("Import value", "Export value"),
+    unit == "1000 USD"
+  )
+
+# Reshaping
+
+element_col |>
+  select(year, item, element, value) |>
+  pivot_wider(
+    names_from = element,
+    values_from = value
+  )
+```
+**Note:** If you reshape the data first, R will try to create columns for every single unit (e.g., "Import value_1000 USD", "Import value_m3"), creating a massive, fragmented table. By filtering first, we ensure we are only pivoting the financial values.
+
+**2. Replacing NA with Zero `(values_fill = 0)`**
+
+The argument `values_fill = 0` should not be added. If missing `(NA)` values are replaced with zero, it implies that a specific product had exactly zero trade in that year. This would artificially drag down average value calculations and distort the time-series charts. It is safer to leave NAs as they are and handle them explicitly using `na.rm = TRUE` inside summary functions.
+
+**3 & 4. Convert Data Types and Year**
+
+Ensuring the columns have the correct data types is essential. The year column should be an integer (not a double). Years are discrete, whole numbers used as labels for time; treating them as continuous decimals (doubles) consumes unnecessary memory and can cause plotting errors on the x-axis.
+
+```{r}
+#| label: convert-types
+
+nigeria_wood_trade_clean <- nigeria_wood_trade_clean |>
+  mutate(
+    year = as.integer(year),
+    value = as.double(value)
+  )
+
+head(nigeria_wood_trade_clean, 20) |> 
+  knitr::kable()
+
+# Verify no NAs were created during conversion
+sum(is.na(nigeria_wood_trade_clean$year))
+```
+
+**5, 6 & 7. Arrange Columns and Filter**
+
+The analysis is only interested in Import and Export values for the `1000 USD` unit. Instead of reshaping the data, a simpler and more efficient approach is to filter the data to remove physical quantities, and select the exact columns needed.
+
+```{r}
+#| label: arrange-columns
+
+nigeria_wood_trade_arranged <- nigeria_wood_trade_clean |> 
+  filter(unit == "1000 USD") |>
+  select(
+    year, 
+    flag_description,
+    item, 
+    element, 
+    value
+  )
+
+head(nigeria_wood_trade_arranged, 7) |> 
+  knitr::kable()
+```
+
+**8. Convert to Million Dollars**
+
+The current `value` column is in thousands of dollars (`1000 USD`). To convert this to millions, the value is divided by 1000 and stored in a new column called `value_million`.
+
+```{r}
+#| label: convert-millions
+
+trade_millions <- nigeria_wood_trade_arranged |> 
+  mutate(
+    value_million = value / 1000
+  )
+
+head(trade_millions) |> 
+  knitr::kable()
+```
+
+**9. Summary Tables**
+
+To understand the dataset's composition and trade dynamics, five summary tables are produced.
+
+**9.1 Number of Observations by Trade Direction and Unit**
+
+This table shows the distribution of data points across the different trade directions and units.
+
+```{r}
+#| label: tbl-obs-direction-unit
+
+observations_by_direction_unit <- nigeria_wood_trade_clean |>
+  filter(element %in% c("Import value", "Export value", "Import quantity", "Export quantity")) |>
+  count(element, unit, name = "number_of_observations") |>
+  arrange(element, unit)
+
+observations_by_direction_unit |> 
+  knitr::kable()
+```
+
+**9.2 Total and Average Value by Trade Direction and Year**
+
+This table aggregates the financial trade values (`1000 USD`) by trade direction and year, keeping units separate to avoid mathematical errors.
+
+```{r}
+#| label: tbl-total-average-year
+
+trade_summary <- nigeria_wood_trade_clean |>
+  filter(element %in% c("Import value", "Export value")) |>
+  group_by(element, year, unit) |>
+  summarise(
+    total_value = sum(value, na.rm = TRUE),
+    average_value = mean(value, na.rm = TRUE),
+    number_of_observations = n(),
+    .groups = "drop"
+  ) |>
+  arrange(year, unit, element)
+
+head(trade_summary, 12) |> 
+  knitr::kable()
+```
+
+**9.3 Excluding Aggregates to Prevent Double-Counting**
+
+Before identifying the top five export and import products, it is crucial to remove hierarchical aggregate categories (e.g., "Sawnwood" which is the sum of "Sawnwood, coniferous" and "Sawnwood, non-coniferous"). 
+
+**Why Excluding Aggregates is Necessary**
+
+The FAOSTAT dataset is structured hierarchically, meaning it contains both leaf-level products (individual tradeable goods, like Sawnwood, non-coniferous) and aggregate categories (parent categories that sum up multiple products, like Sawnwood or Wood and paper products).
+
+If a "Top 5 Products" analysis is run on the raw data without removing aggregates, it will produce mathematically misleading results due to double-counting. The aggregate categories will rise to the top of the ranking because their values simply equal the sum of the underlying leaf-level products. For example, listing both "Sawnwood" and "Sawnwood, non-coniferous" in a top 5 list is redundant.
+
+To answer the question "which individual products have the largest trade value?", the aggregate parent categories must be excluded.
+
+An explicit exclusion list is built based on the FAOSTAT item hierarchy.
+
+```{r}
+#| label: exclude-aggregates
+
+aggregate_items <- c(
+  # Top-level totals
+  "Wood and paper products (export/import)",
+  "Primary wood and paper products (export/import)",
+  "Secondary processed wood products (export/import)",
+  "Secondary processed paper products (export/import)",
+  
+  # Roundwood branch
+  "Roundwood",
+  "Wood fuel",
+  "Wood fuel, all species (export/import, 1961-2016)",
+  "Industrial roundwood",
+  "Industrial roundwood, coniferous (export/import)",
+  "Industrial roundwood, non-coniferous tropical (export/import)",
+  "Industrial roundwood, non-coniferous non-tropical (export/import)",
+  "Sawlogs and veneer logs",
+  "Pulpwood, round and split (production)",
+  "Other industrial roundwood",
+  
+  # Chips branch
+  "Wood chips, particles and residues",
+  
+  # Sawnwood branch
+  "Sawnwood",
+  
+  # Panels branch
+  "Wood-based panels",
+  "Fibreboard",
+  
+  # Pulp branch
+  "Total fibre furnish",
+  "Pulp for paper",
+  "Wood pulp",
+  "Chemical wood pulp",
+  
+  # Paper branch
+  "Paper and paperboard",
+  "Graphic papers",
+  "Packaging paper and paperboard",
+  
+  # Secondary processed sawnwood
+  "Further processed sawnwood (export/import)"
+)
+```
+The explicit aggregate_items list above was created by reviewing the FAOSTAT item hierarchy and identifying three types of aggregate parent categories:
+
+**- Top-level totals:** Items whose names imply the sum of the entire dataset (e.g., Primary wood and paper products).
+
+**- Semantic umbrellas:** Items that group specific sub-categories but do not share the exact same name prefix (e.g., Wood-based panels contains Plywood and LVL, Particle board, and Fibreboard).
+
+**- Comma-separated parents:** Items that serve as the parent to a comma-separated list (e.g., Sawnwood is the parent of Sawnwood, coniferous and Sawnwood, non-coniferous).
+
+By filtering out these 26 aggregate items, the subsequent tables isolate the true, distinct tradeable products.
+
+```{r}
+#| label: tbl-top-exports
+#| warning: false
+
+top_export_value <- trade_millions |>
+  filter(
+    element == "Export value",
+    !item %in% aggregate_items
+  ) |>
+  group_by(item) |>
+  summarise(
+    total_export_million = sum(value_million, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  slice_max(order_by = total_export_million, n = 5, with_ties = FALSE) |>
+  arrange(desc(total_export_million))
+
+top_export_value |> 
+  knitr::kable()
+```
+
+**9.5 Top 5 Import Products by Total Trade Value**
+
+Similarly, the five products with the largest total import value are identified.
+
+```{r}
+#| label: tbl-top-imports
+#| warning: false
+
+top_import_value <- trade_millions |>
+  filter(
+    element == "Import value",
+    !item %in% aggregate_items
+  ) |>
+  group_by(item) |>
+  summarise(
+    total_import_million = sum(value_million, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  slice_max(order_by = total_import_million, n = 5, with_ties = FALSE) |>
+  arrange(desc(total_import_million))
+
+top_import_value |> 
+  knitr::kable()
+```
+
+**9.6 Number and Proportion of Observations by Flag Status**
+
+In the FAOSTAT database, every observation (a specific product, year, and trade direction) is assigned a "flag." This flag indicates the source and reliability of the data point. The three flags present in the Nigeria dataset are:
+
+**- A (Official figure):** The data was reported directly by the Nigerian government or official customs authorities.
+
+**- E (Estimated value):** FAOSTAT estimated the value because official data was missing, delayed, or incomplete.
+
+**- X (Figure from external organization):** The data was sourced from a non-governmental organization, industry report, or international body.
+
+The table below calculates the count (`n_observations`) and the percentage (`proportion`) of each flag category.
+
+```{r}
+#| label: tbl-flag-summary
+#| warning: true
+
+flag_summary <- nigeria_wood_trade_clean |>
+  count(flag, flag_description, name = "n_observations") |>
+  mutate(
+    proportion = round(n_observations / sum(n_observations), 3),
+    percent    = round(proportion * 100, 1)
+  ) |>
+  arrange(desc(n_observations))
+
+flag_summary |> 
+  knitr::kable()
+```
+
+**Observation**
+
+The data quality assessment reveals a significant reliance on non-official sources. Exactly 50% of the observations are flagged as X (Figure from external organization), while 42.8% are E (Estimated). The remaining records are either imputed by a receiving agency (4.2% I) or represent official government figures (3.0% A).
+
+**Implication for Policy**
+
+Because only a small fraction (3%) of the data is officially reported by Nigeria, the absolute trade totals presented in this report should be treated as indicative estimates rather than exact figures. While the trends and rankings remain analytically valid as these international sources are generally good, they are secondary sources. They might miss informal cross-border trade, miscalculate tariffs, or use different exchange rates than the Nigerian government.The policy team should cross-reference these FAOSTAT numbers with the Nigerian National Bureau of Statistics (NBS) before making binding fiscal or trade policy decisions.
+
+The NBS is the official statistical agency of the Nigerian government. They collect data directly from the Nigeria Customs Service. Therefore, the NBS holds the "ground truth" for what actually crossed Nigeria's borders.
+
+**10. Total and Average Value by Trade Direction**
+
+To visualize the trends over time, line charts are used for both total and average values. Line charts are the standard choice for time-series data as they clearly highlight turning points, volatility, and long-term divergence.
+
+```{r}
+#| label: calc-annual-trade
+#| echo: false
+#| warning: false
+
+annual_trade_millions <- trade_millions |>
+  filter(element %in% c("Import value", "Export value")) |>
+  group_by(year, element) |>
+  summarise(
+    total_value_million   = sum(value_million, na.rm = TRUE),
+    average_value_million = mean(value_million, na.rm = TRUE),
+    number_of_observations = n(),
+    .groups = "drop"
+  ) |>
+  arrange(year, element)
+
+head(annual_trade_millions, 20) |> 
+  knitr::kable()
+```
+
+**Chart Choice** 
+
+Line charts were selected because they are the standard visualization for time-series data, making it easy to track trends, turning points, and the divergence between imports and exports over the 26-year period. Two separate charts are used because the magnitude of the Total value is vastly different from the Average value; plotting them on the same axis would flatten the average line.
+
+
+**Total Trade Value Over Time**
+
+```{r}
+#| label: fig-total-chart
+#| warning: false
+#| fig-cap: Total Wood & Paper Trade Value by Direction (2000–2025)
+
+total_chart <- annual_trade_millions |>
+  filter(element %in% c("Import value", "Export value")) |>
+  ggplot(mapping = aes(x = year,
+                       y = total_value_million,
+                       colour = element)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  scale_colour_manual(values = c("Import value" = "darkorange", "Export value" = "steelblue")) +
+  labs(
+    title = "Total Wood & Paper Trade Value by Direction (2000–2025)",
+    subtitle = "Total value summed across all products per year",
+    x = "Year",
+    y = "Total value (million USD)",
+    colour = "Trade Direction" 
+  ) +
+  theme_bw()
+
+total_chart
+```
+
+**Average Trade Value Over Time**
+
+```{r}
+#| label: fig-average-chart
+#| warning: false
+#| fig-cap: Average Wood & Paper Trade Value by Direction (2000–2025)
+
+average_chart <- annual_trade_millions |>
+  filter(element %in% c("Import value", "Export value")) |>
+  ggplot(mapping = aes(x = year,
+                       y = average_value_million,
+                       colour = element)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  scale_colour_manual(values = c("Import value" = "darkgreen", "Export value" = "darkred")) +
+  labs(
+    title = "Average Wood & Paper Trade Value by Direction (2000–2025)",
+    subtitle = "Mean value per product-year record",
+    x = "Year",
+    y = "Average value (million USD)",
+    colour = "Trade Direction"
+  ) +
+  theme_bw()
+
+average_chart
+```
+
+**Observations**
+
+**Total Value:** Imports are much higher than exports every year, meaning Nigeria buys far more wood and paper products from other countries than it sells. The total trade value is very "uneven," with major spikes in import values around 2010 and 2021–2022. Export values remained low and stable until a sudden surge around 2014 and remain stable in 2015, decline afterward and experienced another surge in 2017 and experience a decline afterward.
+
+**Average Value:** The average value looks almost identical to the total value, just on a much smaller scale (ranging from roughly 5 to 80 million USD). It goes up and down at the exact same times.
+
+**Why the trends differ**
+
+Over the 2000–2025 period, Nigeria started recording a much wider variety of smaller products in its trade data. Even though the Total money went up, the number of products being tracked went up at the exact same time.
+
+However, the Average divides the total money by this growing list of products, adding many small, lower-value products dragged the mathematical average down. 
+
+**Question 11:** According to the total chart, export value was closest to import value during the periods of 2015 and 2017.
+
+In both years, there were sharp surges in export value that significantly narrowed the trade deficit. The first spike occurred in 2015, and the second, even larger spike occurred in 2017, where the blue and red export line came closest to the orange and green import line.
+
+**12. Faceted Chart of Total and Average Values**
+
+**Chart Choice**
+
+A faceted line chart was chosen using `facet_wrap()`. This allows the Total and Average charts to be displayed side-by-side while giving each its own independent Y-axis (`scales = "free_y"`). Without independent axes, the average line would appear completely flat because it is so much smaller than the total trade volume.
+
+```{r}
+#| label: fig-facet-chart
+#| fig-cap: "Faceted Comparison of Total and Average Trade Values"
+
+# 1. Reshape the data for faceting
+facet_data <- annual_trade_millions |>
+  filter(element %in% c("Import value", "Export value")) |>
+  pivot_longer(
+    cols = c(total_value_million, average_value_million),
+    names_to = "measure",
+    values_to = "value_million"
+  ) |>
+  mutate(
+    measure = if_else(
+      measure == "total_value_million", 
+      "Total value", 
+      "Average value"
+    )
+  )
+
+# 2. Create the faceted chart
+facet_chart <- ggplot(
+  data = facet_data, 
+  mapping = aes(
+    x = year, 
+    y = value_million, 
+    colour = element
+  )
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  facet_wrap(~ measure, scales = "free_y") +  
+  scale_colour_manual(values = c("Import value" = "darkgreen", "Export value" = "red")) +
+  labs(
+    title = "Total and Average Wood & Paper Trade Value\nby Direction (2000–2025)",
+     subtitle = "Comparing total vs. average values (in million USD)\nby year and direction",
+    x = "Year",
+    y = "Value (million USD)",
+    colour = "Trade Direction"
+  ) +
+  theme_light()
+
+facet_chart
+```
+
+**Observation**
+
+By placing the two charts side-by-side, it becomes immediately clear that the shapes of the two trends are almost identical, they peak and dip in the exact same years (e.g., the spikes around 2010, 2015, and 2022). However, the scale is drastically different. The Total value (right panel) operates in the thousands of millions, while the Average value (left panel) operates below 100 million.
+
+**13. Investigation into the Number of Products Recorded Over Time**
+
+**Definition of a Counted Product:**
+To investigate whether the number of recorded products changes over time, a "product" is defined as a unique item name (`item`) recorded in the dataset for a specific trade direction in a given year. The count is calculated using `n_distinct(item)`. This ensures that if the exact same product is recorded multiple times in a single year (e.g., due to different flags or units), it is only counted once.
+
+```{r}
+#| label: calc-product-counts
+#| message: false
+#| warning: false
+
+# Calculate unique products per year and direction
+product_counts <- nigeria_wood_trade_clean |>
+  filter(element %in% c("Import value", "Export value")) |>
+  group_by(year, element) |>       
+  summarise(
+    unique_products = n_distinct(item),
+    .groups = "drop"
+  )
+
+head(product_counts, 20) |> 
+  knitr::kable()
+```
+
+```{r}
+#| label: fig-product-counts
+#| fig-cap: "Number of Unique Products Recorded by Year and Direction"
+
+# Create the line chart
+product_counts_chart <- ggplot(
+  data = product_counts,
+  mapping = aes(x = year, y = unique_products, colour = element)
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5) +
+  scale_colour_manual(values = c("Import value" = "darkred", "Export value" = "navyblue")) +
+  labs(
+    # Added \n to prevent the title from cutting off in the PDF
+    title = "Number of Unique Products Recorded\nby Year and Direction (2000–2025)",
+    subtitle = "Tracking the expansion of product categories in FAOSTAT",
+    x = "Year",
+    y = "Number of Unique Products",
+    colour = "Trade Direction"
+  ) +
+  theme_bw()
+
+product_counts_chart
+```
+
+**Observation**
+
+The number of products recorded does change significantly over time. The line chart displays a distinct "step-up" pattern. Between 2000 and 2007, the dataset tracked roughly 45 unique products for exports and 53 for imports. However, around 2008, the number of recorded products jumped sharply for both directions (reaching over 60). It continued to climb steadily through 2025, ending with over 65 unique products.
+
+**Implication**
+
+This confirms the composition effect discussed in previous sections. As FAOSTAT expanded its reporting coverage, more specialized and smaller product categories were added to the dataset. This increase in the denominator (the number of products) is the exact reason why the average trade value per record remained relatively low, even while the total trade value in millions skyrocketed.
+
+**14. Plot of Top Five Export Products**
+
+A horizontal bar chart is used to visualize the top five export products. This chart type was chosen because product names in FAOSTAT are long and descriptive; a horizontal layout ensures the text remains perfectly readable without overlapping. Additionally, excluding aggregate items (as done in the data preparation) prevents double-counting, ensuring this chart reflects genuine, distinct products.
+
+```{r}
+#| label: fig-top-exports
+#| warning: false
+#| fig-cap: "Top 5 Export Products by Total Trade Value (2000–2025)"
+#| fig-width: 9
+#| fig-height: 5
+
+top_export_value |>
+  mutate(item = fct_reorder(item, total_export_million)) |>
+  ggplot(mapping = aes(x = total_export_million, y = item)) +
+  geom_col(fill = "steelblue") +
+  geom_text(
+    mapping = aes(label = round(total_export_million, 1)),
+    hjust = -0.2,  
+    size = 4,
+    colour = "black",
+    fontface = "bold" # Makes the numbers at the end of the bars bold
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.2))) +
+  labs(
+    title = "Top 5 Export Products by Total Trade Value\n(2000–2025)",
+    subtitle = "Leaf-level products only (aggregates excluded)",
+    x = "Total Export Value (Million USD)",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(
+    # Bold Title and Subtitle
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(face = "bold", size = 11),
+    
+    # Bold Y-axis text (Product names)
+    axis.text.y = element_text(face = "bold", colour = "black", size = 10),
+    
+    # Bold X-axis text (Numbers: 0, 500, 1000...)
+    axis.text.x = element_text(face = "bold", colour = "black", size = 10),
+    
+    # Bold X-axis label ("Total Export Value")
+    axis.title.x = element_text(face = "bold", size = 12),
+    
+    # Add margin to prevent cutting off
+    plot.margin = margin(t = 10, r = 20, b = 10, l = 10)
+  )
+```
+
+**15. Conclusion for a Non-Technical Policy Reader**
+
+This report analyzed Nigeria's wood and paper-product trade data from 2000 to 2025 [@fao2025]. While the overall volume of trade has grown, the data reveals a persistent and widening trade deficit. Nigeria is importing far more finished goods than it is exporting, and its exports remain heavily reliant on raw, unprocessed materials.
+
+**Two Evidence-Based Findings**
+
+**I. A Growing Trade Deficit:** Imports consistently and significantly outpace exports. In recent years,  import values have surged dramatically, peaking at 5,479 million USD in 2022, while export values remained a fraction of that total.
+
+**II. Export Concentration in Raw Materials:** Nigeria's top exports are dominated by unprocessed wood. The largest export by far is Industrial roundwood (raw logs), followed by Wood charcoal. Meanwhile, higher-value finished products—like furniture or processed paper—make up a much smaller share of export revenue.
+
+**Recommendations**
+
+- Before implementing new tariffs or trade policies, the policy team should conduct a follow-up analysis with three specific objectives. First, because 97% of this dataset relies on external estimates, the team must cross-reference these FAOSTAT figures with official customs data from the Nigerian National Bureau of Statistics [@nbs2024] to validate the exact trade volumes. Second, the team should investigate the root causes of the massive import spikes (such as the surges in 2010 and 2022) to determine if they were driven by construction infrastructure projects (e.g., plywood/panels) or a lack of domestic paper manufacturing. Finally, the team should evaluate the return on investment for shifting from raw log exports to processed wood exports. Econometric studies show Nigeria's timber supply is depleting [@idumah2020]; therefore, proving that exporting finished furniture yields higher revenue than raw Industrial roundwood would provide a strong economic justification for banning raw log exports and incentivizing local sawmills and processing plants.
+
+# References
