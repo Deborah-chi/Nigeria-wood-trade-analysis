@@ -2,7 +2,6 @@
 title: "Nigeria's Wood Trade Report"
 author: "Deborah Elesie"
 format: pdf
-number-sections: true
 date: 2026-10-20
 bibliography: references.bib
 csl: apa.csl
@@ -687,4 +686,4 @@ This report analyzed Nigeria's wood and paper-product trade data from 2000 to 20
 
 - Before implementing new tariffs or trade policies, the policy team should conduct a follow-up analysis with three specific objectives. First, because 97% of this dataset relies on external estimates, the team must cross-reference these FAOSTAT figures with official customs data from the Nigerian National Bureau of Statistics [@nbs2024] to validate the exact trade volumes. Second, the team should investigate the root causes of the massive import spikes (such as the surges in 2010 and 2022) to determine if they were driven by construction infrastructure projects (e.g., plywood/panels) or a lack of domestic paper manufacturing. Finally, the team should evaluate the return on investment for shifting from raw log exports to processed wood exports. Econometric studies show Nigeria's timber supply is depleting [@idumah2020]; therefore, proving that exporting finished furniture yields higher revenue than raw Industrial roundwood would provide a strong economic justification for banning raw log exports and incentivizing local sawmills and processing plants.
 
-# References
+# Bibliography
